@@ -3,9 +3,33 @@
 vim.pack.add { 'https://github.com/mfussenegger/nvim-lint' }
 
 local lint = require 'lint'
+
+-- Helper function to determine the best eslint executable
+local function get_eslint_binary()
+  -- nvim-lint provides a built-in utility to find files in parent directories
+  local local_eslint = vim.fs.find({ 'node_modules/.bin/eslint' }, { path = vim.fn.getcwd(), upward = true })[1]
+
+  if local_eslint then
+    return 'eslint'
+  else
+    -- Fallback to the Mason-installed global eslint_d
+    return 'eslint_d'
+  end
+end
+
+-- Dynamically assign the linter based on project setup
+local eslint_cmd = get_eslint_binary()
+
 lint.linters_by_ft = {
-  markdown = { 'markdownlint' }, -- Make sure to install `markdownlint` via mason / npm
+  markdown = { 'markdownlint' },
+  javascript = { eslint_cmd },
+  javascriptreact = { eslint_cmd },
+  typescript = { eslint_cmd },
+  typescriptreact = { eslint_cmd },
+  json = { eslint_cmd },
+  jsonc = { eslint_cmd }
 }
+
 
 -- To allow other plugins to add linters to require('lint').linters_by_ft,
 -- instead set linters_by_ft like this:

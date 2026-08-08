@@ -99,7 +99,7 @@ do
   vim.g.maplocalleader = ' '
 
   -- Set to true if you have a Nerd Font installed and selected in the terminal
-  vim.g.have_nerd_font = false
+  vim.g.have_nerd_font = true
 
   -- [[ Setting options ]]
   --  See `:help vim.o`
@@ -110,7 +110,7 @@ do
   vim.o.number = true
   -- You can also add relative line numbers, to help with jumping.
   --  Experiment for yourself to see if you like it!
-  -- vim.o.relativenumber = true
+  vim.o.relativenumber = true
 
   -- Enable mouse mode, can be useful for resizing splits for example!
   vim.o.mouse = 'a'
@@ -172,6 +172,12 @@ do
   -- See `:help 'confirm'`
   vim.o.confirm = true
 
+  -- Tab config
+  vim.opt.tabstop = 2
+  vim.opt.softtabstop = 2
+  vim.opt.shiftwidth = 2
+  vim.opt.expandtab = true
+
   -- [[ Basic Keymaps ]]
   --  See `:help vim.keymap.set()`
 
@@ -228,6 +234,8 @@ do
   vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
   vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
+vim.keymap.set("n", "<leader>bd", "<cmd>bp | sp | bn | bd<CR>", { desc = "[B]uffer [D]elete (close file)" })
+  --
   -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
   -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
   -- vim.keymap.set("n", "<C-S-l>", "<C-w>L", { desc = "Move window to the right" })
@@ -505,6 +513,22 @@ do
 
   -- See `:help telescope.builtin`
   local builtin = require 'telescope.builtin'
+
+  -- Git search
+  vim.keymap.set("n", "<leader>gc", function()
+  builtin.git_commits({
+      layout_strategy = "horizontal",
+      layout_config = { height = 0.9, prompt_position = "top"},
+      sorting_strategy = "ascending"
+    })
+  end, { desc = "[G]it [C]ommits"})
+  vim.keymap.set("n", "<leader>gt", function()
+      builtin.git_status({
+        layout_strategy = "horizontal",
+        layout_config = { height = 0.9, prompt_position = "top" },
+        sorting_strategy = "ascending",
+      })
+    end, { desc = "[G]it s[T]atus" })
   vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
   vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
   vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
@@ -516,6 +540,17 @@ do
   vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
   vim.keymap.set('n', '<leader>sc', builtin.commands, { desc = '[S]earch [C]ommands' })
   vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
+
+  -- Set key map to organize imports
+  vim.keymap.set("n", "<leader>o", function()
+    vim.lsp.buf.code_action({
+      apply = true,
+      context = {
+        only = { "source.organizeImports" },
+        diagnostics = {},
+      },
+    })
+  end, { desc = "Organize Imports" })
 
   -- Add Telescope-based LSP pickers when an LSP attaches to a buffer.
   -- If you later switch picker plugins, this is where to update these mappings.
@@ -695,7 +730,74 @@ do
     --    https://github.com/pmizio/typescript-tools.nvim
     --
     -- But for many setups, the LSP (`ts_ls`) will work just fine
-    -- ts_ls = {},
+    basedpyright = {},
+
+    vtsls = {
+      autoUseWorkspaceTsdk = true
+    },
+    cssls = {},
+
+    kotlin_language_server = {
+      root_dir = function(bufnr, on_dir)
+        -- android/ files: settings.gradle is found walking up → root = android/
+        local root = vim.fs.root(bufnr, { 'settings.gradle', 'settings.gradle.kts' })
+        if root then
+          on_dir(root)
+          return
+        end
+        -- modules/*/android/ files: no settings.gradle above them.
+        -- Use git root so these files are inside the workspace and not "excluded".
+        -- on_attach will add android/ as a workspace folder for Gradle resolution.
+        local git_root = vim.fs.root(bufnr, { '.git' })
+        if git_root then
+          if vim.uv.fs_stat(git_root .. '/android/settings.gradle')
+            or vim.uv.fs_stat(git_root .. '/android/settings.gradle.kts')
+          then
+            on_dir(git_root)
+            return
+          end
+        end
+        on_dir(vim.fs.root(bufnr, { 'build.gradle', 'build.gradle.kts' }))
+      end,
+      on_attach = function(client, _bufnr)
+        -- For the git-root client (modules/ files), suppress "Unresolved reference"
+        -- diagnostics. In standalone mode these are just noise from missing Android SDK
+        -- types; real syntax/logic errors within the module still surface.
+        local root = client.config.root_dir
+        if not root or vim.endswith(root, '/android') then return end
+        if client._expo_diag_filtered then return end
+        client._expo_diag_filtered = true
+        local orig = vim.lsp.handlers['textDocument/publishDiagnostics']
+        client.handlers['textDocument/publishDiagnostics'] = function(err, result, ctx, cfg)
+          if result and result.diagnostics then
+            result.diagnostics = vim.tbl_filter(function(d)
+              return not (d.message and d.message:match('^Unresolved reference'))
+            end, result.diagnostics)
+          end
+          orig(err, result, ctx, cfg)
+        end
+      end,
+    },
+
+    -- kotlin_language_server = {
+    --   filetypes = { 'kotlin'},
+    --   root_markers = kt_root_files,
+    --   cmd = { 'kotlin-language-server' },
+    --   init_options = {
+    --     -- Enables caching and use project root to store cache data.
+    --     storagePath = vim.fs.root(vim.fn.expand '%:p:h', kt_root_files)
+    --   }
+    -- },
+
+    -- kotlin_lsp = {
+    --   filetypes= { 'kotlin'},
+    --   -- root_markers = {
+    --   --   'settings.gradle',
+    --   --   'settings.gradle.kts',
+    --   --   'build.gradle',
+    --   --   'build.gradle.kts'
+    --   -- }
+    -- },
 
     stylua = {}, -- Used to format Lua code
 
@@ -777,7 +879,11 @@ do
       -- You can specify filetypes to autoformat on save here:
       local enabled_filetypes = {
         -- lua = true,
-        -- python = true,
+        python = true,
+        javascript = true,
+        typescript = true,
+        javascriptreact = true,
+        typescriptreact = true,
       }
       if enabled_filetypes[vim.bo[bufnr].filetype] then
         return { timeout_ms = 500 }
@@ -795,7 +901,10 @@ do
       -- python = { "isort", "black" },
       --
       -- You can use 'stop_after_first' to run the first available formatter from the list
-      -- javascript = { "prettierd", "prettier", stop_after_first = true },
+      javascript = {"prettierd", "prettier", stop_after_first = true },
+      typescript = {"prettierd", "prettier", stop_after_first = true },
+      javascriptreact = {"prettierd", "prettier", stop_after_first = true },
+      typescriptreact = {"prettierd", "prettier", stop_after_first = true },
     },
   }
 
@@ -820,6 +929,8 @@ do
   --
   -- vim.pack.add { gh 'rafamadriz/friendly-snippets' }
   -- require('luasnip.loaders.from_vscode').lazy_load()
+
+  require('custom.plugins.css')
 
   -- [[ Autocomplete Engine ]]
   vim.pack.add { { src = gh 'saghen/blink.cmp', version = vim.version.range '1.*' } }
@@ -861,11 +972,17 @@ do
     completion = {
       -- By default, you may press `<c-space>` to show the documentation.
       -- Optionally, set `auto_show = true` to show the documentation after a delay.
-      documentation = { auto_show = false, auto_show_delay_ms = 500 },
+      documentation = { auto_show = true, auto_show_delay_ms = 500 },
     },
 
     sources = {
-      default = { 'lsp', 'path', 'snippets' },
+      default = { 'lsp', 'path', 'snippets', 'buffer', 'css_vars' },
+      providers = {
+        css_vars = {
+          name = 'css-vars',
+          module = 'css-vars.blink'
+        }
+      }
     },
 
     snippets = { preset = 'luasnip' },
@@ -898,7 +1015,7 @@ do
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
   -- Ensure basic parsers are installed
-  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc', 'kotlin' }
   require('nvim-treesitter').install(parsers)
 
   ---@param buf integer
@@ -960,18 +1077,21 @@ do
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
-  -- require 'kickstart.plugins.debug'
+  require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
-  -- require 'kickstart.plugins.lint'
-  -- require 'kickstart.plugins.autopairs'
-  -- require 'kickstart.plugins.neo-tree'
-  -- require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
+  require 'kickstart.plugins.lint'
+  require 'kickstart.plugins.autopairs'
+  require 'kickstart.plugins.neo-tree'
+  require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
 
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
   -- require 'custom.plugins'
+  require 'custom.plugins.autotag'
+  require 'custom.plugins.git'
+  -- require 'custom.plugins.harpoon'
+  require 'custom.plugins.markdown'
 end
 
--- The line beneath this is called `modeline`. See `:help modeline`
--- vim: ts=2 sts=2 sw=2 et
+vim.keymap.del("n", "s")
