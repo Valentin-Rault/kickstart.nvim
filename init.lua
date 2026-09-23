@@ -930,8 +930,6 @@ do
   -- vim.pack.add { gh 'rafamadriz/friendly-snippets' }
   -- require('luasnip.loaders.from_vscode').lazy_load()
 
-  require('custom.plugins.css')
-
   -- [[ Autocomplete Engine ]]
   vim.pack.add { { src = gh 'saghen/blink.cmp', version = vim.version.range '1.*' } }
   require('blink.cmp').setup {
@@ -976,13 +974,7 @@ do
     },
 
     sources = {
-      default = { 'lsp', 'path', 'snippets', 'buffer', 'css_vars' },
-      providers = {
-        css_vars = {
-          name = 'css-vars',
-          module = 'css-vars.blink'
-        }
-      }
+      default = { 'lsp', 'path', 'snippets', 'buffer' },
     },
 
     snippets = { preset = 'luasnip' },

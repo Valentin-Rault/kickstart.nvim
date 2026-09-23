@@ -63,15 +63,38 @@ lint.linters_by_ft = {
 -- lint.linters_by_ft['terraform'] = nil
 -- lint.linters_by_ft['text'] = nil
 
+-- eslint_d resolves config from the linted file's path, but picks which
+-- *local* eslint install to actually run from its invoking cwd. Without a
+-- per-buffer cwd it falls back to its own bundled ESLint, which can be a
+-- different major version than the project's (e.g. plugins calling the
+-- removed `context.getFilename()` crash: "contextOrFilename.getFilename is
+-- not a function"). Point it at the nearest eslint.config.* instead of
+-- relying on Neovim's global cwd.
+local function nearest_eslint_root(bufnr)
+  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(bufnr))
+  if not buf_dir then return nil end
+
+  local config = vim.fs.find(
+    { 'eslint.config.mjs', 'eslint.config.js', 'eslint.config.cjs' },
+    { path = buf_dir, upward = true }
+  )[1]
+  if config then return vim.fs.dirname(config) end
+
+  local local_eslint = vim.fs.find({ 'node_modules/eslint' }, { path = buf_dir, upward = true })[1]
+  return local_eslint and vim.fs.dirname(vim.fs.dirname(local_eslint)) or nil
+end
+
 -- Create autocommand which carries out the actual linting
 -- on the specified events.
 local lint_augroup = vim.api.nvim_create_augroup('lint', { clear = true })
 vim.api.nvim_create_autocmd({ 'BufEnter', 'BufWritePost', 'InsertLeave' }, {
   group = lint_augroup,
-  callback = function()
+  callback = function(args)
     -- Only run the linter in buffers that you can modify in order to
     -- avoid superfluous noise, notably within the handy LSP pop-ups that
     -- describe the hovered symbol using Markdown.
-    if vim.bo.modifiable then lint.try_lint() end
+    if vim.bo.modifiable then
+      lint.try_lint(nil, { cwd = nearest_eslint_root(args.buf) })
+    end
   end,
 })
