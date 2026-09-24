@@ -12,3 +12,13 @@ vim.keymap.set("n", "<leader>gg", function()
 end, {
   desc = "Show Neogit UI",
 })
+
+local diffview_close = { "n", "<leader>gq", "<cmd>DiffviewClose<cr>", { desc = "Close Diffview" } }
+
+require("diffview").setup({
+  keymaps = {
+    view = { diffview_close },
+    file_panel = { diffview_close },
+    file_history_panel = { diffview_close },
+  },
+})
